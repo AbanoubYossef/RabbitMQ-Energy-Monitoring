@@ -1,0 +1,109 @@
+# Traefik Dynamic Configuration
+# This can be updated without restarting Traefik
+
+http:
+  # ============================================
+  # ROUTERS - Define routing rules
+  # ============================================
+  routers:
+    # Auth Service Router
+    auth-router:
+      rule: "PathPrefix(`/api/auth`)"
+      service: auth-service
+      entryPoints:
+        - web
+      middlewares:
+        - auth-headers
+    
+    # User Service Router
+    user-router:
+      rule: "PathPrefix(`/api/users`)"
+      service: user-service
+      entryPoints:
+        - web
+      middlewares:
+        - user-headers
+    
+    # Device Service Router
+    device-router:
+      rule: "PathPrefix(`/api/devices`) || PathPrefix(`/api/mappings`)"
+      service: device-service
+      entryPoints:
+        - web
+      middlewares:
+        - device-headers
+
+  # ============================================
+  # SERVICES - Define backend services
+  # ============================================
+  services:
+    # Auth Service
+    auth-service:
+      loadBalancer:
+        servers:
+          - url: "http://auth-service:8000"
+    
+    # User Service
+    user-service:
+      loadBalancer:
+        servers:
+          - url: "http://user-service:8001"
+    
+    # Device Service
+    device-service:
+      loadBalancer:
+        servers:
+          - url: "http://device-service:8002"
+
+  # ============================================
+  # MIDDLEWARES - Modify requests/responses
+  # ============================================
+  middlewares:
+    # Add CORS headers for Auth Service
+    auth-headers:
+      headers:
+        accessControlAllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        accessControlAllowOriginList:
+          - "*"
+        accessControlAllowHeaders:
+          - "*"
+    
+    # Add CORS headers for User Service
+    user-headers:
+      headers:
+        accessControlAllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        accessControlAllowOriginList:
+          - "*"
+        accessControlAllowHeaders:
+          - "*"
+    
+    # Add CORS headers for Device Service
+    device-headers:
+      headers:
+        accessControlAllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        accessControlAllowOriginList:
+          - "*"
+        accessControlAllowHeaders:
+          - "*"
+    
+    # Rate limiting (optional)
+    rate-limit:
+      rateLimit:
+        average: 100
+        burst: 50
+        period: "1m"

@@ -1,0 +1,132 @@
+services:
+  # Traefik
+  traefik:
+    image: traefik:v3.2
+    container_name: traefik
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--log.level=DEBUG"
+    ports:
+      - "80:80"
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - microservices-network
+
+  # PostgreSQL
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Auth Service
+  auth-service:
+    build:
+      context: ./auth_service
+    container_name: auth-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SECRET_KEY: ${JWT_SECRET_KEY:-secret}
+      DEBUG: "True"
+      DB_NAME: auth_db
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_HOST: postgres
+      DB_PORT: 5432
+      USER_SERVICE_URL: http://user-service:8001/api
+      DEVICE_SERVICE_URL: http://device-service:8002/api
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-secret}
+    networks:
+      - microservices-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.auth.rule=PathPrefix(`/api/auth`)"
+      - "traefik.http.services.auth.loadbalancer.server.port=8000"
+
+  # User Service
+  user-service:
+    build:
+      context: ./user_service
+    container_name: user-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SECRET_KEY: user-secret
+      DEBUG: "True"
+      DB_NAME: user_db
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_HOST: postgres
+      DB_PORT: 5432
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-secret}
+    networks:
+      - microservices-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.user.rule=PathPrefix(`/api/users`)"
+      - "traefik.http.services.user.loadbalancer.server.port=8001"
+
+  # Device Service
+  device-service:
+    build:
+      context: ./device_service
+    container_name: device-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SECRET_KEY: device-secret
+      DEBUG: "True"
+      DB_NAME: device_db
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_HOST: postgres
+      DB_PORT: 5432
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-secret}
+    networks:
+      - microservices-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.device.rule=PathPrefix(`/api/devices`) || PathPrefix(`/api/mappings`)"
+      - "traefik.http.services.device.loadbalancer.server.port=8002"
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+    container_name: frontend
+    networks:
+      - microservices-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.frontend.priority=1"
+      - "traefik.http.services.frontend.loadbalancer.server.port=80"
+
+networks:
+  microservices-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
