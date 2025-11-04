@@ -4,6 +4,8 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
+from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExample
+from drf_spectacular.types import OpenApiTypes
 from .models import User
 from .serializers import RegisterSerializer, LoginSerializer, UserSerializer
 from .saga import UserCreationSaga, UserUpdateSaga, UserDeletionSaga
@@ -28,6 +30,25 @@ def get_tokens_for_user(user):
         }
     }
 
+@extend_schema(
+    request=RegisterSerializer,
+    responses={201: UserSerializer},
+    description="Register a new user. Creates user in Auth, User, and Device services using Saga pattern.",
+    examples=[
+        OpenApiExample(
+            'Register Example',
+            value={
+                'username': 'john',
+                'password': 'password123',
+                'role': 'client',
+                'fname': 'John',
+                'lname': 'Doe',
+                'email': 'john@example.com',
+                'phone': '+1234567890'
+            }
+        )
+    ]
+)
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def register(request):
@@ -58,6 +79,27 @@ def register(request):
         'tokens': tokens
     }, status=status.HTTP_201_CREATED)
 
+@extend_schema(
+    request=LoginSerializer,
+    responses={200: dict},
+    description="Login user and return JWT access and refresh tokens",
+    examples=[
+        OpenApiExample(
+            'Admin Login',
+            value={
+                'username': 'admin',
+                'password': 'admin123'
+            }
+        ),
+        OpenApiExample(
+            'Client Login',
+            value={
+                'username': 'alice',
+                'password': 'alice123'
+            }
+        )
+    ]
+)
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def login(request):

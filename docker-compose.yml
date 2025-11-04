@@ -56,11 +56,13 @@ services:
       USER_SERVICE_URL: http://user-service:8001/api
       DEVICE_SERVICE_URL: http://device-service:8002/api
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-secret}
+    ports:
+      - "8000:8000"
     networks:
       - microservices-network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.auth.rule=PathPrefix(`/api/auth`)"
+      - "traefik.http.routers.auth.rule=PathPrefix(`/api/auth`) || PathPrefix(`/api/schema`) || PathPrefix(`/api/docs`)"
       - "traefik.http.services.auth.loadbalancer.server.port=8000"
 
   # User Service
@@ -80,6 +82,8 @@ services:
       DB_HOST: postgres
       DB_PORT: 5432
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-secret}
+    ports:
+      - "8001:8001"
     networks:
       - microservices-network
     labels:
@@ -104,6 +108,8 @@ services:
       DB_HOST: postgres
       DB_PORT: 5432
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-secret}
+    ports:
+      - "8002:8002"
     networks:
       - microservices-network
     labels:
