@@ -415,17 +415,4 @@ Edit `device_simulator/config.json` to customize:
 - Docker logs for debugging
 - Database query logging (DEBUG mode)
 
-## Future Enhancements
-
-- [ ] Add Redis for caching
-- [ ] Implement rate limiting
-- [ ] Add Prometheus + Grafana for metrics
-- [ ] Implement WebSocket for real-time updates
-- [ ] Add unit and integration tests
-- [ ] Implement CI/CD pipeline
-- [ ] Add API versioning
-- [ ] Implement data backup strategy
-- [ ] Add email notifications
-- [ ] Implement audit logging
-
 
