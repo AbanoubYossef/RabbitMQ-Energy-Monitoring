@@ -16,8 +16,8 @@ echo "RabbitMQ is ready!"
 
 # Run migrations
 echo "Running migrations..."
-python manage.py makemigrations
-python manage.py migrate
+python manage.py makemigrations --noinput
+python manage.py migrate --noinput
 
 # Start RabbitMQ consumers in background
 echo "Starting RabbitMQ sync consumer in background..."

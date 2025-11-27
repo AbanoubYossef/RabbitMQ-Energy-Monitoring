@@ -95,7 +95,9 @@ services:
   user-service:
     build:
       context: ./user_service
-    container_name: user-service
+    # container_name: user-service
+    deploy:
+      replicas: 2
     depends_on:
       postgres:
         condition: service_healthy
@@ -114,8 +116,7 @@ services:
       RABBITMQ_PORT: 5672
       RABBITMQ_USER: admin
       RABBITMQ_PASS: admin123
-    ports:
-      - "8001:8001"
+    # Port mapping removed to allow scaling - access via Traefik on port 80
     networks:
       - microservices-network
     labels:

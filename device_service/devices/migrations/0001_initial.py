@@ -33,6 +33,7 @@ class Migration(migrations.Migration):
                 ('id', models.UUIDField(editable=False, primary_key=True, serialize=False)),
                 ('username', models.CharField(max_length=150, unique=True)),
                 ('role', models.CharField(choices=[('admin', 'Admin'), ('client', 'Client')], default='client', max_length=20)),
+                ('created_at', models.DateTimeField(auto_now_add=True)),
             ],
             options={
                 'db_table': 'users',
@@ -43,8 +44,8 @@ class Migration(migrations.Migration):
             fields=[
                 ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
                 ('assigned_at', models.DateTimeField(auto_now_add=True)),
-                ('device', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='owner', to='devices.device')),
-                ('user', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='devices', to='devices.user')),
+                ('device', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='user_assignments', to='devices.device')),
+                ('user', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='device_assignments', to='devices.user')),
             ],
             options={
                 'db_table': 'user_device_mapping',

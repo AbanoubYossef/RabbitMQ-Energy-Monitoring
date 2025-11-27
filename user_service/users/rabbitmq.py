@@ -238,7 +238,9 @@ class RabbitMQConnection:
         """Consume messages from a queue"""
         try:
             if not self.channel:
-                self.connect()
+                if not self.connect():
+                    logger.error("Failed to establish RabbitMQ connection")
+                    return
             
             self.declare_queue(queue_name)
             self.channel.basic_qos(prefetch_count=1)

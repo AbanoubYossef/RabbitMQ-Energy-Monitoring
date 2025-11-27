@@ -15,8 +15,14 @@ class UserServiceConsumer:
     """Consumer for user service operations"""
     
     def __init__(self):
-        self.connection = get_rabbitmq_connection()
+        self.connection = None
         self.queue_name = 'user_service_queue'
+        try:
+            self.connection = get_rabbitmq_connection()
+            if not self.connection or not self.connection.channel:
+                logger.error("Failed to establish RabbitMQ connection")
+        except Exception as e:
+            logger.error(f"Error initializing consumer: {e}")
     
     def callback(self, ch, method, properties, body):
         """Process incoming messages"""
@@ -92,6 +98,10 @@ class UserServiceConsumer:
     
     def start(self):
         """Start consuming messages"""
+        if not self.connection or not self.connection.channel:
+            logger.error("Cannot start consumer: No valid RabbitMQ connection")
+            return
+        
         try:
             self.connection.declare_queue(self.queue_name)
             logger.info(f"Starting consumer for {self.queue_name}")
