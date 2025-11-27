@@ -1,10 +1,14 @@
 """
-Saga Pattern with Compensation for distributed transactions
+Saga Pattern with Compensation for distributed transactions using RabbitMQ
 """
-import requests
 import logging
+import json
+import uuid
+import time
 from django.conf import settings
 from .models import User
+from .rabbitmq import get_publisher
+import pika
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +44,19 @@ class UserCreationSaga:
             self._create_device_service(user)
             self.device_service_created = True
             
+            # Step 4: Publish user_created event to RabbitMQ
+            try:
+                publisher = get_publisher()
+                publisher.publish_user_created({
+                    'id': user.id,
+                    'username': user.username,
+                    'role': user.role
+                })
+                logger.info(f"Published user_created event for {user.username}")
+            except Exception as e:
+                logger.error(f"Failed to publish user_created event: {e}")
+                # Don't fail the saga if RabbitMQ publish fails
+            
             return True, user
             
         except Exception as e:
@@ -59,7 +76,7 @@ class UserCreationSaga:
         return user
     
     def _create_user_service(self, user, user_data):
-        """Step 2: Create user in User Service"""
+        """Step 2: Create user in User Service via RabbitMQ"""
         payload = {
             'id': str(user.id),
             'username': user.username,
@@ -71,19 +88,22 @@ class UserCreationSaga:
         }
         
         try:
-            response = requests.post(
-                f"{settings.USER_SERVICE_URL}/users/create/",
-                json=payload,
-                timeout=5
-            )
-            response.raise_for_status()
-            logger.info(f"User service created: {user.id}")
-        except requests.exceptions.RequestException as e:
+            publisher = get_publisher()
+            message = {
+                'action': 'create_user',
+                'data': payload,
+                'correlation_id': str(uuid.uuid4())
+            }
+            publisher.publish_to_queue('user_service_queue', message)
+            logger.info(f"User service create message sent: {user.id}")
+            # Wait a bit for processing
+            time.sleep(0.5)
+        except Exception as e:
             logger.error(f"User service creation failed: {str(e)}")
             raise Exception(f"User service failed: {str(e)}")
     
     def _create_device_service(self, user):
-        """Step 3: Create user in Device Service"""
+        """Step 3: Create user in Device Service via RabbitMQ"""
         payload = {
             'id': str(user.id),
             'username': user.username,
@@ -91,14 +111,17 @@ class UserCreationSaga:
         }
         
         try:
-            response = requests.post(
-                f"{settings.DEVICE_SERVICE_URL}/users/create/",
-                json=payload,
-                timeout=5
-            )
-            response.raise_for_status()
-            logger.info(f"Device service created: {user.id}")
-        except requests.exceptions.RequestException as e:
+            publisher = get_publisher()
+            message = {
+                'action': 'create_user',
+                'data': payload,
+                'correlation_id': str(uuid.uuid4())
+            }
+            publisher.publish_to_queue('device_service_queue', message)
+            logger.info(f"Device service create message sent: {user.id}")
+            # Wait a bit for processing
+            time.sleep(0.5)
+        except Exception as e:
             logger.error(f"Device service creation failed: {str(e)}")
             raise Exception(f"Device service failed: {str(e)}")
     
@@ -127,24 +150,30 @@ class UserCreationSaga:
             logger.error(f"Auth rollback failed: {str(e)}")
     
     def _rollback_user_service(self):
-        """Delete user from User Service"""
+        """Delete user from User Service via RabbitMQ"""
         try:
-            requests.delete(
-                f"{settings.USER_SERVICE_URL}/users/{self.user_id}/rollback/",
-                timeout=5
-            )
-            logger.info(f"User service rolled back: {self.user_id}")
+            publisher = get_publisher()
+            message = {
+                'action': 'delete_user',
+                'data': {'id': self.user_id},
+                'correlation_id': str(uuid.uuid4())
+            }
+            publisher.publish_to_queue('user_service_queue', message)
+            logger.info(f"User service rollback message sent: {self.user_id}")
         except Exception as e:
             logger.error(f"User service rollback failed: {str(e)}")
     
     def _rollback_device_service(self):
-        """Delete user from Device Service"""
+        """Delete user from Device Service via RabbitMQ"""
         try:
-            requests.delete(
-                f"{settings.DEVICE_SERVICE_URL}/users/{self.user_id}/rollback/",
-                timeout=5
-            )
-            logger.info(f"Device service rolled back: {self.user_id}")
+            publisher = get_publisher()
+            message = {
+                'action': 'delete_user',
+                'data': {'id': self.user_id},
+                'correlation_id': str(uuid.uuid4())
+            }
+            publisher.publish_to_queue('device_service_queue', message)
+            logger.info(f"Device service rollback message sent: {self.user_id}")
         except Exception as e:
             logger.error(f"Device service rollback failed: {str(e)}")
 
@@ -191,27 +220,31 @@ class UserUpdateSaga:
             return False, str(e)
     
     def _update_user_service(self, update_data):
-        """Update in User Service"""
+        """Update in User Service via RabbitMQ"""
         try:
-            response = requests.put(
-                f"{settings.USER_SERVICE_URL}/users/{self.user_id}/update/",
-                json=update_data,
-                timeout=5
-            )
-            response.raise_for_status()
+            publisher = get_publisher()
+            message = {
+                'action': 'update_user',
+                'data': {'id': self.user_id, **update_data},
+                'correlation_id': str(uuid.uuid4())
+            }
+            publisher.publish_to_queue('user_service_queue', message)
+            time.sleep(0.5)
         except Exception as e:
             raise Exception(f"User service update failed: {str(e)}")
     
     def _update_device_service(self, update_data):
-        """Update in Device Service"""
+        """Update in Device Service via RabbitMQ"""
         try:
             payload = {k: v for k, v in update_data.items() if k in ['username', 'role']}
-            response = requests.put(
-                f"{settings.DEVICE_SERVICE_URL}/users/{self.user_id}/update/",
-                json=payload,
-                timeout=5
-            )
-            response.raise_for_status()
+            publisher = get_publisher()
+            message = {
+                'action': 'update_user',
+                'data': {'id': self.user_id, **payload},
+                'correlation_id': str(uuid.uuid4())
+            }
+            publisher.publish_to_queue('device_service_queue', message)
+            time.sleep(0.5)
         except Exception as e:
             raise Exception(f"Device service update failed: {str(e)}")
     
@@ -242,6 +275,14 @@ class UserDeletionSaga:
             # Delete from Auth DB
             User.objects.filter(id=self.user_id).delete()
             
+            # Publish user_deleted event to RabbitMQ
+            try:
+                publisher = get_publisher()
+                publisher.publish_user_deleted(self.user_id)
+                logger.info(f"Published user_deleted event for {self.user_id}")
+            except Exception as e:
+                logger.error(f"Failed to publish user_deleted event: {e}")
+            
             return True, "User deleted successfully"
             
         except Exception as e:
@@ -249,23 +290,29 @@ class UserDeletionSaga:
             return False, str(e)
     
     def _delete_user_service(self):
-        """Delete from User Service"""
+        """Delete from User Service via RabbitMQ"""
         try:
-            response = requests.delete(
-                f"{settings.USER_SERVICE_URL}/users/{self.user_id}/",
-                timeout=5
-            )
-            response.raise_for_status()
+            publisher = get_publisher()
+            message = {
+                'action': 'delete_user',
+                'data': {'id': self.user_id},
+                'correlation_id': str(uuid.uuid4())
+            }
+            publisher.publish_to_queue('user_service_queue', message)
+            time.sleep(0.5)
         except Exception as e:
             raise Exception(f"User service deletion failed: {str(e)}")
     
     def _delete_device_service(self):
-        """Delete from Device Service"""
+        """Delete from Device Service via RabbitMQ"""
         try:
-            response = requests.delete(
-                f"{settings.DEVICE_SERVICE_URL}/users/{self.user_id}/",
-                timeout=5
-            )
-            response.raise_for_status()
+            publisher = get_publisher()
+            message = {
+                'action': 'delete_user',
+                'data': {'id': self.user_id},
+                'correlation_id': str(uuid.uuid4())
+            }
+            publisher.publish_to_queue('device_service_queue', message)
+            time.sleep(0.5)
         except Exception as e:
             raise Exception(f"Device service deletion failed: {str(e)}")

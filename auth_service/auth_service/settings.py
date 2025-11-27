@@ -143,3 +143,9 @@ CORS_ALLOW_CREDENTIALS = True
 # Microservices URLs
 USER_SERVICE_URL = config('USER_SERVICE_URL', default='http://localhost:8001/api')
 DEVICE_SERVICE_URL = config('DEVICE_SERVICE_URL', default='http://localhost:8002/api')
+
+# RabbitMQ Configuration
+RABBITMQ_HOST = config('RABBITMQ_HOST', default='localhost')
+RABBITMQ_PORT = config('RABBITMQ_PORT', default=5672, cast=int)
+RABBITMQ_USER = config('RABBITMQ_USER', default='admin')
+RABBITMQ_PASS = config('RABBITMQ_PASS', default='admin123')

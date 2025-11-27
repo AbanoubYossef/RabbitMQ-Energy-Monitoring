@@ -37,6 +37,26 @@ services:
       timeout: 5s
       retries: 5
 
+  # RabbitMQ
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: admin123
+    ports:
+      - "5672:5672"   # AMQP port
+      - "15672:15672" # Management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # Auth Service
   auth-service:
     build:
@@ -44,6 +64,8 @@ services:
     container_name: auth-service
     depends_on:
       postgres:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
     environment:
       SECRET_KEY: ${JWT_SECRET_KEY:-secret}
@@ -56,6 +78,10 @@ services:
       USER_SERVICE_URL: http://user-service:8001/api
       DEVICE_SERVICE_URL: http://device-service:8002/api
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-secret}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: admin
+      RABBITMQ_PASS: admin123
     ports:
       - "8000:8000"
     networks:
@@ -73,6 +99,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     environment:
       SECRET_KEY: user-secret
       DEBUG: "True"
@@ -82,6 +110,10 @@ services:
       DB_HOST: postgres
       DB_PORT: 5432
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-secret}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: admin
+      RABBITMQ_PASS: admin123
     ports:
       - "8001:8001"
     networks:
@@ -99,6 +131,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     environment:
       SECRET_KEY: device-secret
       DEBUG: "True"
@@ -108,6 +142,10 @@ services:
       DB_HOST: postgres
       DB_PORT: 5432
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-secret}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: admin
+      RABBITMQ_PASS: admin123
     ports:
       - "8002:8002"
     networks:
@@ -116,6 +154,38 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.device.rule=PathPrefix(`/api/devices`) || PathPrefix(`/api/mappings`)"
       - "traefik.http.services.device.loadbalancer.server.port=8002"
+
+  # Monitoring Service
+  monitoring-service:
+    build:
+      context: ./monitoring_service
+    container_name: monitoring-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      SECRET_KEY: monitoring-secret
+      DEBUG: "True"
+      DB_NAME: monitoring_db
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_HOST: postgres
+      DB_PORT: 5432
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-secret}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: admin
+      RABBITMQ_PASS: admin123
+    ports:
+      - "8003:8003"
+    networks:
+      - microservices-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.monitoring.rule=PathPrefix(`/api/monitoring`)"
+      - "traefik.http.services.monitoring.loadbalancer.server.port=8003"
 
   # Frontend
   frontend:
@@ -130,9 +200,28 @@ services:
       - "traefik.http.routers.frontend.priority=1"
       - "traefik.http.services.frontend.loadbalancer.server.port=80"
 
+  # Device Simulator
+  device-simulator:
+    build:
+      context: ./device_simulator
+      dockerfile: Dockerfile
+    container_name: device-simulator
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: admin
+      RABBITMQ_PASS: admin123
+    networks:
+      - microservices-network
+    restart: unless-stopped
+
 networks:
   microservices-network:
     driver: bridge
 
 volumes:
   postgres_data:
+  rabbitmq_data:

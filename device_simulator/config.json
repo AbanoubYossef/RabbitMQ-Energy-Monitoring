@@ -1,0 +1,39 @@
+{
+  "device_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+  "interval_seconds": 1,
+  "base_load_kwh": 0.2,
+  "rabbitmq": {
+    "host": "rabbitmq",
+    "port": 5672,
+    "user": "admin",
+    "password": "admin123",
+    "queue": "device_data_queue"
+  },
+  "patterns": {
+    "night": {
+      "hours": [0, 1, 2, 3, 4, 5],
+      "multiplier": 0.5,
+      "description": "Low consumption during night"
+    },
+    "morning": {
+      "hours": [6, 7, 8],
+      "multiplier": 1.2,
+      "description": "Moderate-high consumption in morning"
+    },
+    "day": {
+      "hours": [9, 10, 11, 12, 13, 14, 15, 16],
+      "multiplier": 0.8,
+      "description": "Moderate consumption during day"
+    },
+    "evening": {
+      "hours": [17, 18, 19, 20, 21],
+      "multiplier": 1.5,
+      "description": "High consumption in evening"
+    },
+    "late": {
+      "hours": [22, 23],
+      "multiplier": 0.7,
+      "description": "Moderate-low consumption late night"
+    }
+  }
+}

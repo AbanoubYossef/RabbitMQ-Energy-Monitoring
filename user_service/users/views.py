@@ -4,6 +4,7 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from .models import User
 from .serializers import UserSerializer, UserCreateSerializer, UserUpdateSerializer
+from .rabbitmq import get_publisher
 import logging
 
 logger = logging.getLogger(__name__)
@@ -32,6 +33,19 @@ def create_user(request):
     try:
         user = User.objects.create(**serializer.validated_data)
         logger.info(f"User created in User Service: {user.id}")
+        
+        # Publish user_created event to RabbitMQ
+        try:
+            publisher = get_publisher()
+            publisher.publish_user_created({
+                'id': user.id,
+                'username': user.username,
+                'role': user.role
+            })
+            logger.info(f"Published user_created event for {user.username}")
+        except Exception as e:
+            logger.error(f"Failed to publish user_created event: {e}")
+            # Don't fail the operation if RabbitMQ publish fails
         
         return Response({
             'message': 'User created successfully',
@@ -122,6 +136,18 @@ def update_user(request, user_id):
     user.save()
     logger.info(f"User updated in User Service: {user.id}")
     
+    # Publish user_updated event to RabbitMQ
+    try:
+        publisher = get_publisher()
+        publisher.publish_user_updated({
+            'id': user.id,
+            'username': user.username,
+            'role': user.role
+        })
+        logger.info(f"Published user_updated event for {user.username}")
+    except Exception as e:
+        logger.error(f"Failed to publish user_updated event: {e}")
+    
     return Response({
         'message': 'User updated successfully',
         'user': UserSerializer(user).data
@@ -146,6 +172,14 @@ def delete_user(request, user_id):
         user = User.objects.get(id=user_id)
         user.delete()
         logger.info(f"User deleted from User Service: {user_id}")
+        
+        # Publish user_deleted event to RabbitMQ
+        try:
+            publisher = get_publisher()
+            publisher.publish_user_deleted(user_id)
+            logger.info(f"Published user_deleted event for {user_id}")
+        except Exception as e:
+            logger.error(f"Failed to publish user_deleted event: {e}")
         
         return Response({
             'message': 'User deleted successfully'

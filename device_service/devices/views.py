@@ -6,6 +6,7 @@ from .serializers import (
     UserSerializer, DeviceSerializer, DeviceCreateSerializer,
     UserDeviceMappingSerializer, AssignDeviceSerializer, UserCreateSerializer
 )
+from .rabbitmq import get_publisher
 import logging
 
 logger = logging.getLogger(__name__)
@@ -83,6 +84,20 @@ def delete_user(request, user_id):
         
     try:
         user = User.objects.get(id=user_id)
+        
+        # FIX: Get all mappings BEFORE deletion
+        mappings = UserDeviceMapping.objects.filter(user=user).select_related('device')
+        
+        publisher = get_publisher()
+        
+        # FIX: Publish device_unassigned for each mapping
+        for mapping in mappings:
+            try:
+                publisher.publish_device_unassigned(user_id, mapping.device.id)
+                logger.info(f"Published device_unassigned: device {mapping.device.id} from user {user_id}")
+            except Exception as e:
+                logger.error(f"Failed to publish device_unassigned: {e}")
+        
         # Cascade delete will handle UserDeviceMapping
         user.delete()
         logger.info(f"User deleted from Device Service: {user_id}")
@@ -137,7 +152,31 @@ def create_device(request):
     
     try:
         device = Device.objects.create(**serializer.validated_data)
+        print(f"[DEBUG] Device created: {device.id} - {device.name}")
         logger.info(f"Device created: {device.id}")
+        
+        # Publish device_created event to RabbitMQ
+        print("[DEBUG] About to publish device_created event...")
+        try:
+            print(f"[DEBUG] Getting publisher for device {device.name}...")
+            publisher = get_publisher()
+            print(f"[DEBUG] Publisher obtained: {publisher}")
+            
+            if publisher:
+                print(f"[DEBUG] Publishing device_created event...")
+                publisher.publish_device_created({
+                    'id': device.id,
+                    'name': device.name,
+                    'description': device.description,
+                    'max_consumption': device.max_consumption
+                })
+                print(f"[DEBUG] Successfully published device_created event for {device.name}")
+            else:
+                print("[ERROR] Publisher is None!")
+        except Exception as e:
+            print(f"[ERROR] Failed to publish device_created event: {e}")
+            import traceback
+            traceback.print_exc()
         
         return Response({
             'message': 'Device created successfully',
@@ -158,16 +197,25 @@ def list_devices(request):
     Admin: see all devices
     Client: see only their devices
     """
-    if request.user_role == 'admin':
-        devices = Device.objects.all()
-    else:
-        # Get devices assigned to this user
-        user = User.objects.get(id=request.user_id)
-        device_ids = UserDeviceMapping.objects.filter(user=user).values_list('device_id', flat=True)
-        devices = Device.objects.filter(id__in=device_ids)
-    
-    serializer = DeviceSerializer(devices, many=True)
-    return Response(serializer.data, status=status.HTTP_200_OK)
+    try:
+        if request.user_role == 'admin':
+            devices = Device.objects.all()
+        else:
+            # Get devices assigned to this user
+            try:
+                user = User.objects.get(id=request.user_id)
+                device_ids = UserDeviceMapping.objects.filter(user=user).values_list('device_id', flat=True)
+                devices = Device.objects.filter(id__in=device_ids)
+            except User.DoesNotExist:
+                # User not synced yet, return empty list
+                logger.warning(f"User {request.user_id} not found in device service")
+                return Response([], status=status.HTTP_200_OK)
+        
+        serializer = DeviceSerializer(devices, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Error listing devices: {str(e)}")
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['GET'])
 def get_device(request, device_id):
@@ -222,6 +270,19 @@ def update_device(request, device_id):
     device.save()
     logger.info(f"Device updated: {device.id}")
     
+    # Publish device_updated event to RabbitMQ
+    try:
+        publisher = get_publisher()
+        publisher.publish_device_updated({
+            'id': device.id,
+            'name': device.name,
+            'description': device.description,
+            'max_consumption': device.max_consumption
+        })
+        logger.info(f"Published device_updated event for {device.name}")
+    except Exception as e:
+        logger.error(f"Failed to publish device_updated event: {e}")
+    
     return Response({
         'message': 'Device updated successfully',
         'device': DeviceSerializer(device).data
@@ -229,27 +290,51 @@ def update_device(request, device_id):
 
 @api_view(['DELETE'])
 def delete_device(request, device_id):
-    """
-    Delete device (Admin only)
-    """
-    if request.user_role != 'admin':
-        return Response(
-            {'error': 'Admin permission required'},
-            status=status.HTTP_403_FORBIDDEN
-        )
-    
     try:
+        print(f"[DELETE_DEVICE] Starting deletion for device: {device_id}")
         device = Device.objects.get(id=device_id)
-        # Cascade delete will handle UserDeviceMapping
-        device.delete()
-        logger.info(f"Device deleted: {device_id}")
+        print(f"[DELETE_DEVICE] Device found: {device.name}")
         
-        return Response({
-            'message': 'Device deleted successfully'
-        }, status=status.HTTP_200_OK)
+        # FIX: Get all mappings BEFORE deletion
+        mappings = UserDeviceMapping.objects.filter(device=device).select_related('user')
+        print(f"[DELETE_DEVICE] Found {mappings.count()} mappings")
+        
+        print(f"[DELETE_DEVICE] Getting publisher...")
+        publisher = get_publisher()
+        print(f"[DELETE_DEVICE] Publisher obtained: {publisher}")
+        
+        #  FIX: Publish device_unassigned for each mapping
+        for mapping in mappings:
+            try:
+                print(f"[DELETE_DEVICE] Publishing unassignment for user {mapping.user.id}")
+                publisher.publish_device_unassigned(mapping.user.id, device_id)
+                print(f"[DELETE_DEVICE] Published device_unassigned: {device_id} from user {mapping.user.id}")
+            except Exception as e:
+                print(f"[DELETE_DEVICE] Failed to publish device_unassigned: {e}")
+                logger.error(f"Failed to publish device_unassigned: {e}", exc_info=True)
+        
+        #  FIX: Then publish device_deleted
+        try:
+            print(f"[DELETE_DEVICE] About to call publish_device_deleted for {device_id}")
+            publisher.publish_device_deleted(device_id)
+            print(f"[DELETE_DEVICE] Returned from publish_device_deleted")
+        except Exception as e:
+            print(f"[DELETE_DEVICE] Failed to publish device_deleted: {e}")
+            logger.error(f"Failed to publish device_deleted: {e}", exc_info=True)
+        
+        # Finally, delete the device (CASCADE handles mappings)
+        print(f"[DELETE_DEVICE] Deleting device from database...")
+        device.delete()
+        print(f"[DELETE_DEVICE] Device deleted: {device_id}")
+        
+        return Response({'message': 'Device deleted successfully'}, status=200)
         
     except Device.DoesNotExist:
-        return Response({'error': 'Device not found'}, status=status.HTTP_404_NOT_FOUND)
+        return Response({'error': 'Device not found'}, status=404)
+    except Exception as e:
+        print(f"[DELETE_DEVICE] Unexpected error: {e}")
+        logger.error(f"[DELETE_DEVICE] Unexpected error: {e}", exc_info=True)
+        return Response({'error': str(e)}, status=500)
 
 # ========== DEVICE ASSIGNMENT ENDPOINTS ==========
 
@@ -287,6 +372,23 @@ def assign_device(request):
         # Create mapping (multiple users can have the same device)
         mapping = UserDeviceMapping.objects.create(user=user, device=device)
         logger.info(f"Device {device_id} assigned to user {user_id}")
+        
+        # Publish device_assigned event to RabbitMQ
+        try:
+            print(f"[DEBUG] Getting publisher for device assignment...")
+            publisher = get_publisher()
+            print(f"[DEBUG] Publisher obtained: {publisher}")
+            
+            if publisher:
+                print(f"[DEBUG] Publishing device_assigned event...")
+                publisher.publish_device_assigned(user_id, device_id)
+                print(f"[DEBUG] Successfully published device_assigned event for device {device_id} to user {user_id}")
+            else:
+                print("[ERROR] Publisher is None!")
+        except Exception as e:
+            print(f"[ERROR] Failed to publish device_assigned event: {e}")
+            import traceback
+            traceback.print_exc()
         
         return Response({
             'message': 'Device assigned successfully',
@@ -329,6 +431,14 @@ def unassign_device(request, device_id):
         mapping = UserDeviceMapping.objects.get(device_id=device_id, user_id=user_id)
         mapping.delete()
         logger.info(f"Device {device_id} unassigned from user {user_id}")
+        
+        # Publish device_unassigned event to RabbitMQ
+        try:
+            publisher = get_publisher()
+            publisher.publish_device_unassigned(user_id, device_id)
+            logger.info(f"Published device_unassigned event for device {device_id} from user {user_id}")
+        except Exception as e:
+            logger.error(f"Failed to publish device_unassigned event: {e}")
         
         return Response({
             'message': 'Device unassigned successfully'

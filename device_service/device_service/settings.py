@@ -110,3 +110,9 @@ CORS_ALLOWED_ORIGINS = [
     'http://localhost:3000',
 ]
 CORS_ALLOW_CREDENTIALS = True
+
+# RabbitMQ Configuration
+RABBITMQ_HOST = config('RABBITMQ_HOST', default='localhost')
+RABBITMQ_PORT = config('RABBITMQ_PORT', default=5672, cast=int)
+RABBITMQ_USER = config('RABBITMQ_USER', default='admin')
+RABBITMQ_PASS = config('RABBITMQ_PASS', default='admin123')

@@ -9,6 +9,9 @@ import RegisterPage from './pages/auth/RegisterPage';
 // Dashboard
 import DashboardPage from './pages/dashboard/DashboardPage';
 
+// Monitoring Pages
+import EnergyMonitoringPage from './pages/monitoring/EnergyMonitoringPage';
+
 // User Pages
 import UsersListPage from './pages/users/UsersListPage';
 import CreateEditUserPage from './pages/users/CreateEditUserPage';
@@ -34,6 +37,16 @@ function App() {
             element={
               <ProtectedRoute>
                 <DashboardPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Monitoring Routes */}
+          <Route
+            path="/monitoring"
+            element={
+              <ProtectedRoute>
+                <EnergyMonitoringPage />
               </ProtectedRoute>
             }
           />

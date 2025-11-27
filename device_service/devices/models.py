@@ -13,6 +13,7 @@ class User(models.Model):
     id = models.UUIDField(primary_key=True, editable=False)
     username = models.CharField(max_length=150, unique=True)
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='client')
+    created_at = models.DateTimeField(auto_now_add=True)
     
     class Meta:
         db_table = 'users'

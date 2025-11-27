@@ -1,698 +1,437 @@
-# Energy Management System
+# Energy Management System - Microservices Architecture
 
-A complete microservices-based energy management system for monitoring and managing energy consumption devices. Built with Django REST Framework backend and React TypeScript frontend.
+A distributed energy management system built with microservices architecture, featuring real-time device monitoring, user management, and energy consumption analytics.
 
-## 📋 Table of Contents
+## Architecture Overview
 
-- [Overview](#overview)
-- [Features](#features)
-- [Architecture](#architecture)
-- [Technology Stack](#technology-stack)
-- [Quick Start](#quick-start)
-- [Project Structure](#project-structure)
-- [API Documentation](#api-documentation)
-- [User Roles](#user-roles)
-- [Development](#development)
-- [Testing](#testing)
-- [Deployment](#deployment)
-- [Troubleshooting](#troubleshooting)
-
-## 🎯 Overview
-
-The Energy Management System is a full-stack application that allows administrators to manage users and energy monitoring devices, assign devices to users, and enables clients to view their assigned devices and monitor energy consumption.
-
-### Key Capabilities
-
-- **User Management**: Create, update, and delete users with role-based access control
-- **Device Management**: Manage energy monitoring devices with specifications
-- **Device Assignment**: Assign devices to users (many-to-many relationship)
-- **Real-time Monitoring**: Track device assignments and energy consumption
-- **Secure Authentication**: JWT-based authentication with role-based permissions
-
-## ✨ Features
-
-### Admin Features
-- ✅ Full user management (CRUD operations)
-- ✅ Full device management (CRUD operations)
-- ✅ Assign/unassign devices to users
-- ✅ View all device assignments
-- ✅ System statistics dashboard
-- ✅ Multiple users can share the same device
-
-### Client Features
-- ✅ View personal dashboard
-- ✅ View assigned devices
-- ✅ View device specifications (consumption, price)
-- ✅ Read-only access to device information
-
-## 🏗️ Architecture
-
-### Microservices Architecture
+This system consists of 6 microservices orchestrated with Docker Compose and Traefik as the API gateway:
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    Browser (Port 80)                     │
-└────────────────────────┬────────────────────────────────┘
-                         │
-                         ▼
-┌─────────────────────────────────────────────────────────┐
-│              Traefik (API Gateway & Router)              │
-│  • Routes /api/auth → Auth Service                      │
-│  • Routes /api/users → User Service                     │
-│  • Routes /api/devices → Device Service                 │
-│  • Routes / → Frontend                                  │
-└──────┬──────────────────────────────────────────┬───────┘
-       │                                          │
-       ▼                                          ▼
-┌──────────────┐                          ┌──────────────┐
-│   Frontend   │                          │   Backend    │
-│              │                          │  Services    │
-│ React 19     │                          │              │
-│ TypeScript   │                          │ Auth Service │
-│ Vite         │                          │ (Port 8000)  │
-│ Tailwind CSS │                          │              │
-│ React Router │                          │ User Service │
-│ Axios        │                          │ (Port 8001)  │
-│              │                          │              │
-│ Served by    │                          │Device Service│
-│ Nginx        │                          │ (Port 8002)  │
-└──────────────┘                          └──────┬───────┘
-                                                 │
-                                                 ▼
-                                          ┌──────────────┐
-                                          │  PostgreSQL  │
-                                          │  (Port 5432) │
-                                          │              │
-                                          │  auth_db     │
-                                          │  user_db     │
-                                          │  device_db   │
-                                          └──────────────┘
+┌─────────────┐
+│   Traefik   │ (API Gateway & Load Balancer)
+│   Port 80   │
+└──────┬──────┘
+       │
+       ├──────────────┬──────────────┬──────────────┬──────────────┬──────────────┐
+       │              │              │              │              │              │
+┌──────▼──────┐ ┌────▼─────┐ ┌──────▼──────┐ ┌────▼─────┐ ┌──────▼──────┐ ┌────▼─────┐
+│    Auth     │ │   User   │ │   Device    │ │Monitoring│ │  Frontend   │ │Simulator │
+│  Service    │ │ Service  │ │  Service    │ │ Service  │ │   (React)   │ │          │
+│  Port 8000  │ │Port 8001 │ │  Port 8002  │ │Port 8003 │ │   Port 80   │ │          │
+└──────┬──────┘ └────┬─────┘ └──────┬──────┘ └────┬─────┘ └─────────────┘ └────┬─────┘
+       │              │              │              │                             │
+       └──────────────┴──────────────┴──────────────┴─────────────────────────────┘
+                                     │
+                      ┌──────────────┴──────────────┐
+                      │                             │
+               ┌──────▼──────┐             ┌────────▼────────┐
+               │  PostgreSQL │             │    RabbitMQ     │
+               │  Port 5432  │             │  Port 5672      │
+               │             │             │  Management UI  │
+               │  4 Databases│             │  Port 15672     │
+               └─────────────┘             └─────────────────┘
 ```
 
-### Service Communication
+## Microservices
 
-1. **Auth Service**: Handles authentication, JWT token generation, and user CRUD operations
-2. **User Service**: Manages user profile data (name, email, phone)
-3. **Device Service**: Manages devices and user-device assignments
-4. **Saga Pattern**: Ensures data consistency across services during user creation/deletion
+### 1. Auth Service (Port 8000)
+**Technology**: Django REST Framework + JWT
 
-### Database Design
+**Responsibilities**:
+- User authentication and authorization
+- JWT token generation and validation
+- User registration with Saga pattern orchestration
+- Role-based access control (Admin/Client)
 
-Each service has its own PostgreSQL database:
+**Key Features**:
+- JWT-based authentication with 5-hour access tokens
+- Saga pattern for distributed user creation across services
+- Password hashing with Django's built-in security
+- OpenAPI/Swagger documentation
 
-**auth_db:**
-- `users` table: id, username, password, role, created_at
+**Database**: `auth_db` (PostgreSQL)
+- Users table with credentials and roles
 
-**user_db:**
-- `users` table: id, username, role, fname, lname, email, phone, created_at
+**API Endpoints**:
+- `POST /api/auth/register` - Register new user
+- `POST /api/auth/login` - Login and get JWT tokens
+- `GET /api/auth/validate` - Validate JWT token
+- `GET /api/auth/users` - List all users (Admin only)
+- `PUT /api/auth/users/{id}` - Update user (Admin only)
+- `DELETE /api/auth/users/{id}` - Delete user (Admin only)
 
-**device_db:**
-- `users` table: id, username, role (synchronized)
-- `devices` table: id, name, description, max_consumption, price, created_at
-- `user_device_mapping` table: id, user_id, device_id, assigned_at
+### 2. User Service (Port 8001)
+**Technology**: Django REST Framework
 
-## 🛠️ Technology Stack
+**Responsibilities**:
+- User profile management
+- Extended user information (name, email, phone)
+- User synchronization via RabbitMQ events
 
-### Backend
-- **Framework**: Django 5.0 + Django REST Framework
-- **Authentication**: JWT (djangorestframework-simplejwt)
-- **Database**: PostgreSQL 15
-- **API Gateway**: Traefik v3.2
-- **Containerization**: Docker + Docker Compose
+**Key Features**:
+- JWT authentication middleware
+- Role-based access control
+- Event publishing for user lifecycle (created/updated/deleted)
+- Saga compensation for rollback support
 
-### Frontend
-- **Framework**: React 19
-- **Language**: TypeScript 5.9
-- **Build Tool**: Vite 7
-- **Styling**: Tailwind CSS 4
-- **Routing**: React Router 7
-- **HTTP Client**: Axios
-- **Form Handling**: React Hook Form
-- **Web Server**: Nginx (production)
+**Database**: `user_db` (PostgreSQL)
+- Users table with profile information
 
-### DevOps
-- **Containerization**: Docker
-- **Orchestration**: Docker Compose
-- **Reverse Proxy**: Traefik
-- **Database**: PostgreSQL (containerized)
+**API Endpoints**:
+- `POST /api/users` - Create user (internal Saga call)
+- `GET /api/users` - List all users (Admin only)
+- `GET /api/users/{id}` - Get user details
+- `PUT /api/users/{id}` - Update user (Admin only)
+- `DELETE /api/users/{id}` - Delete user (Admin only)
+- `DELETE /api/users/{id}/rollback` - Rollback user creation (Saga)
 
-## 🚀 Quick Start
+### 3. Device Service (Port 8002)
+**Technology**: Django REST Framework
+
+**Responsibilities**:
+- Device management (CRUD operations)
+- User-device mapping (many-to-many relationships)
+- Device assignment/unassignment
+- User synchronization from Auth service
+
+**Key Features**:
+- Multiple users can share the same device
+- Cascade deletion handling
+- Event publishing for device lifecycle
+- JWT authentication middleware
+
+**Database**: `device_db` (PostgreSQL)
+- Users table (synchronized)
+- Devices table
+- UserDeviceMapping table (many-to-many)
+
+**API Endpoints**:
+- `POST /api/devices` - Create device (Admin only)
+- `GET /api/devices` - List devices (filtered by role)
+- `GET /api/devices/{id}` - Get device details
+- `PUT /api/devices/{id}` - Update device (Admin only)
+- `DELETE /api/devices/{id}` - Delete device (Admin only)
+- `POST /api/mappings/assign` - Assign device to user (Admin only)
+- `DELETE /api/mappings/unassign/{device_id}` - Unassign device (Admin only)
+- `GET /api/mappings/user/{user_id}/devices` - Get user's devices
+- `GET /api/mappings` - List all mappings
+
+### 4. Monitoring Service (Port 8003)
+**Technology**: Django REST Framework
+
+**Responsibilities**:
+- Real-time device measurement ingestion
+- Hourly energy consumption aggregation
+- Historical data queries
+- Data synchronization via RabbitMQ
+
+**Key Features**:
+- RabbitMQ consumer for device measurements
+- Automatic hourly aggregation
+- Role-based data access (Admin sees all, Client sees own devices)
+- Time-series data management
+
+**Database**: `monitoring_db` (PostgreSQL)
+- Users table (synchronized)
+- Devices table (synchronized)
+- UserDeviceMapping table (synchronized)
+- DeviceMeasurement table (raw 10-minute intervals)
+- HourlyEnergyConsumption table (aggregated data)
+
+**API Endpoints**:
+- `GET /api/monitoring/measurements` - List measurements (filtered by role)
+- `GET /api/monitoring/hourly/daily` - Get hourly data for a specific date
+- `GET /api/monitoring/hourly/range` - Get data for a date range
+- `GET /api/monitoring/devices` - List synchronized devices
+- `GET /api/monitoring/users` - List synchronized users
+
+**RabbitMQ Consumers**:
+- `device_data_queue` - Ingests device measurements
+- `sync_queue` - Synchronizes user/device/mapping data
+
+### 5. Frontend (Port 80 via Traefik)
+**Technology**: React 19 + TypeScript + Vite + TailwindCSS
+
+**Features**:
+- Modern responsive UI with TailwindCSS
+- JWT-based authentication with context management
+- Role-based routing and component rendering
+- Real-time data visualization with Recharts
+
+**Pages**:
+- Login/Register
+- Dashboard (role-specific)
+- User Management (Admin only)
+- Device Management (Admin only)
+- Device Monitoring (hourly/daily charts)
+- Device Assignment (Admin only)
+
+**Key Libraries**:
+- `axios` - HTTP client
+- `react-router-dom` - Routing
+- `recharts` - Data visualization
+- `react-hook-form` - Form management
+- `jwt-decode` - JWT token parsing
+- `date-fns` - Date formatting
+
+### 6. Device Simulator
+**Technology**: Python + Pika (RabbitMQ client)
+
+**Responsibilities**:
+- Simulate smart meter readings
+- Generate realistic energy consumption patterns
+- Publish measurements to RabbitMQ
+
+**Key Features**:
+- Time-based consumption patterns (night/morning/day/evening/late)
+- Configurable base load and intervals
+- Time acceleration for testing (1 sec = X minutes simulated)
+- Automatic reconnection to RabbitMQ
+
+**Consumption Patterns**:
+- Night (0-5h): 0.5x multiplier - Low consumption
+- Morning (6-8h): 1.2x multiplier - Moderate-high consumption
+- Day (9-16h): 0.8x multiplier - Moderate consumption
+- Evening (17-21h): 1.5x multiplier - High consumption (peak)
+- Late (22-23h): 0.7x multiplier - Moderate-low consumption
+
+**Configuration**: `device_simulator/config.json`
+
+## Infrastructure Components
+
+### PostgreSQL (Port 5432)
+- 4 separate databases for service isolation
+- Automatic initialization via `init-databases.sh`
+- Persistent volumes for data retention
+
+**Databases**:
+- `auth_db` - Authentication service
+- `user_db` - User service
+- `device_db` - Device service
+- `monitoring_db` - Monitoring service
+
+### RabbitMQ (Port 5672, Management UI: 15672)
+- Message broker for asynchronous communication
+- Event-driven architecture
+- Persistent message queues
+
+**Queues**:
+- `device_data_queue` - Device measurements from simulator
+- `sync_queue` - User/device/mapping synchronization events
+
+**Event Types**:
+- `user_created`, `user_updated`, `user_deleted`
+- `device_created`, `device_updated`, `device_deleted`
+- `device_assigned`, `device_unassigned`
+
+### Traefik (Port 80, Dashboard: 8080)
+- API Gateway and reverse proxy
+- Automatic service discovery via Docker labels
+- Load balancing and routing
+
+**Routing Rules**:
+- `/api/auth/*` → Auth Service
+- `/api/users/*` → User Service
+- `/api/devices/*`, `/api/mappings/*` → Device Service
+- `/api/monitoring/*` → Monitoring Service
+- `/*` → Frontend (lowest priority)
+
+## Design Patterns
+
+### 1. Saga Pattern
+Used for distributed transactions across microservices:
+- **User Registration**: Auth → User → Device services
+- **User Update**: Auth → User → Device services
+- **User Deletion**: Auth → User → Device services
+- Automatic compensation (rollback) on failure
+
+### 2. Event-Driven Architecture
+- Services publish events to RabbitMQ
+- Consumers react to events asynchronously
+- Loose coupling between services
+
+### 3. Database per Service
+- Each microservice has its own database
+- Data isolation and independence
+- Synchronization via events
+
+### 4. API Gateway Pattern
+- Traefik as single entry point
+- Centralized routing and load balancing
+- Service discovery via Docker labels
+
+## Getting Started
 
 ### Prerequisites
-
-- Docker Desktop installed and running
-- 4GB RAM minimum
-- Ports 80 and 8080 available
+- Docker Desktop
+- Docker Compose
+- Git
 
 ### Installation
 
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd Microservices-Energy-Management-System-main
-   ```
-
-2. **Start all services**
-   ```powershell
-   .\start.ps1
-   ```
-   
-   Or manually:
-   ```bash
-   docker-compose up -d
-   ```
-
-3. **Access the application**
-   
-   Open your browser: **http://localhost**
-
-4. **Login with default credentials**
-   
-   **Admin:**
-   - Username: `admin`
-   - Password: `admin123`
-   
-   **Client:**
-   - Username: `alice`
-   - Password: `alice123`
-
-### Generate Test Data
-
-To populate the system with 15 users and 15 devices:
-
-```powershell
-.\generate_test_data.ps1
-```
-
-This creates:
-- 15 users (13 clients, 2 admins)
-- 15 energy monitoring devices
-- Random device assignments
-
-## 📁 Project Structure
-
-```
-.
-├── auth_service/              # Authentication microservice
-│   ├── authentication/        # Django app
-│   │   ├── models.py         # User model
-│   │   ├── views.py          # API endpoints
-│   │   ├── serializers.py    # Data serialization
-│   │   └── saga.py           # Saga pattern implementation
-│   ├── Dockerfile
-│   └── requirements.txt
-│
-├── user_service/              # User management microservice
-│   ├── users/                # Django app
-│   │   ├── models.py         # User profile model
-│   │   ├── views.py          # API endpoints
-│   │   └── middleware.py     # JWT authentication
-│   ├── Dockerfile
-│   └── requirements.txt
-│
-├── device_service/            # Device management microservice
-│   ├── devices/              # Django app
-│   │   ├── models.py         # Device & mapping models
-│   │   ├── views.py          # API endpoints
-│   │   └── serializers.py    # Data serialization
-│   ├── Dockerfile
-│   └── requirements.txt
-│
-├── frontend/                  # React frontend
-│   ├── src/
-│   │   ├── api/              # API client functions
-│   │   ├── components/       # React components
-│   │   ├── contexts/         # React contexts (Auth)
-│   │   ├── pages/            # Page components
-│   │   ├── types/            # TypeScript types
-│   │   └── utils/            # Utility functions
-│   ├── Dockerfile
-│   ├── nginx.conf            # Nginx configuration
-│   └── package.json
-│
-├── docker-compose.yml         # Docker orchestration
-├── .env                       # Environment variables
-├── init-databases.sh          # Database initialization
-│
-├── README.md                  # This file
-├── README_DOCKER.md           # Docker quick reference
-├── DOCKER_SETUP.md            # Detailed Docker guide
-├── RUNNING_GUIDE.md           # Original running guide
-│
-├── start.ps1                  # Start script
-├── stop.ps1                   # Stop script
-├── generate_test_data.ps1     # Test data generator
-└── test_all_apis.ps1          # API testing script
-```
-
-## 📚 API Documentation
-
-### Interactive Swagger Documentation
-
-All microservices now include interactive Swagger/OpenAPI documentation:
-
-- **Auth Service**: http://localhost:8000/api/docs/
-- **User Service**: http://localhost:8001/api/docs/
-- **Device Service**: http://localhost:8002/api/docs/
-
-For detailed instructions on using Swagger UI, see [SWAGGER_GUIDE.md](SWAGGER_GUIDE.md)
-
-### Authentication Endpoints
-
-**Register User**
-```http
-POST /api/auth/register/
-Content-Type: application/json
-
-{
-  "username": "john",
-  "password": "password123",
-  "role": "client",
-  "fname": "John",
-  "lname": "Doe",
-  "email": "john@example.com",
-  "phone": "+1234567890"
-}
-```
-
-**Login**
-```http
-POST /api/auth/login/
-Content-Type: application/json
-
-{
-  "username": "admin",
-  "password": "admin123"
-}
-
-Response:
-{
-  "message": "Login successful",
-  "tokens": {
-    "access": "eyJ0eXAiOiJKV1QiLCJhbGc...",
-    "refresh": "eyJ0eXAiOiJKV1QiLCJhbGc...",
-    "user": {
-      "id": "uuid",
-      "username": "admin",
-      "role": "admin"
-    }
-  }
-}
-```
-
-### User Management Endpoints
-
-**List All Users** (Admin only)
-```http
-GET /api/users/
-Authorization: Bearer <token>
-```
-
-**Get User by ID**
-```http
-GET /api/users/{user_id}/
-Authorization: Bearer <token>
-```
-
-**Update User** (Admin only)
-```http
-PUT /api/users/{user_id}/update/
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "fname": "John",
-  "lname": "Smith",
-  "email": "john.smith@example.com",
-  "phone": "+1234567890"
-}
-```
-
-**Delete User** (Admin only)
-```http
-DELETE /api/users/{user_id}/delete/
-Authorization: Bearer <token>
-```
-
-### Device Management Endpoints
-
-**List All Devices**
-```http
-GET /api/devices/
-Authorization: Bearer <token>
-```
-
-**Create Device** (Admin only)
-```http
-POST /api/devices/create/
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "name": "Smart Thermostat",
-  "description": "WiFi-enabled temperature control",
-  "max_consumption": 150,
-  "price": 249.99
-}
-```
-
-**Update Device** (Admin only)
-```http
-PUT /api/devices/{device_id}/update/
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "name": "Smart Thermostat Pro",
-  "max_consumption": 120
-}
-```
-
-**Delete Device** (Admin only)
-```http
-DELETE /api/devices/{device_id}/delete/
-Authorization: Bearer <token>
-```
-
-**Assign Device to User** (Admin only)
-```http
-POST /api/devices/assign/
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "user_id": "uuid",
-  "device_id": "uuid"
-}
-```
-
-**Unassign Device** (Admin only)
-```http
-DELETE /api/devices/{device_id}/unassign/?user_id={user_id}
-Authorization: Bearer <token>
-```
-
-**List All Assignments** (Admin only)
-```http
-GET /api/mappings/
-Authorization: Bearer <token>
-```
-
-For complete API documentation, see [frontend/API_INTEGRATION.md](frontend/API_INTEGRATION.md)
-
-## 👥 User Roles
-
-### Admin Role
-- Full access to all features
-- Can create, update, and delete users
-- Can create, update, and delete devices
-- Can assign/unassign devices to users
-- Can view all system data
-
-### Client Role
-- View personal dashboard
-- View assigned devices
-- Read-only access to device information
-- Cannot modify any data
-
-## 💻 Development
-
-### Running Locally (Without Docker)
-
-**Backend Services:**
-
-1. Install Python dependencies:
-   ```bash
-   cd auth_service
-   pip install -r requirements.txt
-   python manage.py migrate
-   python manage.py runserver 8000
-   ```
-
-2. Repeat for user_service (port 8001) and device_service (port 8002)
-
-**Frontend:**
-
+1. Clone the repository:
 ```bash
-cd frontend
-npm install
-npm run dev
+git clone <repository-url>
+cd <project-directory>
 ```
 
-Access at http://localhost:5173
-
-### Making Changes
-
-**Backend:**
-1. Edit files in service directories
-2. Rebuild Docker image: `docker-compose build <service-name>`
-3. Restart: `docker-compose up -d <service-name>`
-
-**Frontend:**
-1. Edit files in `frontend/src/`
-2. Rebuild: `docker-compose build frontend`
-3. Restart: `docker-compose up -d frontend`
-
-### Code Style
-
-**Backend:**
-- Follow PEP 8 style guide
-- Use Django best practices
-- Document complex functions
-
-**Frontend:**
-- Use TypeScript strict mode
-- Follow React best practices
-- Use functional components with hooks
-
-## 🧪 Testing
-
-### Test All APIs
-
-```powershell
-.\test_all_apis.ps1
+2. Configure environment variables:
+```bash
+# Edit .env file
+JWT_SECRET_KEY=my-super-secret-key-change-in-production-123456
 ```
 
-This script tests:
-- User registration and login
-- User CRUD operations
-- Device CRUD operations
-- Device assignments
-
-### Manual Testing
-
-1. Login as admin
-2. Create a new user
-3. Create a new device
-4. Assign device to user
-5. Login as client
-6. Verify device appears in client dashboard
-
-## 🚢 Deployment
-
-### Docker Deployment (Recommended)
-
+3. Start all services:
 ```bash
 docker-compose up -d
 ```
 
-All services run in containers with automatic networking and health checks.
-
-### Production Considerations
-
-1. **Security:**
-   - Change default passwords
-   - Generate secure JWT secret key
-   - Enable HTTPS
-   - Set `DEBUG=False`
-
-2. **Database:**
-   - Use managed PostgreSQL service
-   - Enable automated backups
-   - Set up replication
-
-3. **Monitoring:**
-   - Enable Traefik access logs
-   - Set up application monitoring
-   - Configure alerts
-
-4. **Scaling:**
-   - Use Docker Swarm or Kubernetes
-   - Scale services horizontally
-   - Add load balancing
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-**Port Conflicts:**
+4. Wait for services to be healthy:
 ```bash
-# Check what's using port 80
-netstat -ano | findstr :80
-
-# Change ports in docker-compose.yml if needed
+docker-compose ps
 ```
 
-**Database Connection Errors:**
-```bash
-# Reset database
-docker-compose down -v
-docker-compose up -d
+5. Access the application:
+- Frontend: http://localhost
+- Traefik Dashboard: http://localhost:8080
+- RabbitMQ Management: http://localhost:15672 (admin/admin123)
+
+### Default Users
+
+The system comes with pre-configured users:
+
+**Admin User**:
+- Username: `admin`
+- Password: `admin123`
+- Role: Admin (full access)
+
+**Client Users**:
+- Username: `alice` / Password: `alice123`
+- Username: `bob` / Password: `bob123`
+- Role: Client (limited access)
+
+## API Documentation
+
+Each service provides OpenAPI/Swagger documentation:
+
+- Auth Service: http://localhost:8000/api/docs/
+- User Service: http://localhost:8001/api/docs/
+- Device Service: http://localhost:8002/api/docs/
+- Monitoring Service: http://localhost:8003/api/docs/
+
+## Development
+
+### Rebuild All Services
+```powershell
+.\rebuild_all.ps1
 ```
 
-**Frontend Not Loading:**
-```bash
-# Check logs
-docker-compose logs frontend
-
-# Rebuild
-docker-compose build frontend
-docker-compose up -d frontend
-```
-
-**API Errors:**
-```bash
-# Check backend logs
-docker-compose logs auth-service
-docker-compose logs user-service
-docker-compose logs device-service
-```
-
-### Viewing Logs
-
+### View Logs
 ```bash
 # All services
 docker-compose logs -f
 
 # Specific service
-docker-compose logs -f <service-name>
-
-# Last 100 lines
-docker-compose logs --tail=100 <service-name>
+docker-compose logs -f auth-service
+docker-compose logs -f device-simulator
 ```
 
-### Database Access
-
+### Stop Services
 ```bash
-# Connect to PostgreSQL
-docker exec -it postgres psql -U postgres
-
-# List databases
-\l
-
-# Connect to database
-\c auth_db
-
-# List tables
-\dt
-
-# Query data
-SELECT * FROM users;
+docker-compose down
 ```
 
-## 📊 Monitoring
-
-### Traefik Dashboard
-
-Access at http://localhost:8080
-
-Shows:
-- Active routes
-- Service health
-- Request metrics
-- Error rates
-
-### Container Stats
-
+### Reset Everything (including data)
 ```bash
-docker stats
+docker-compose down -v
+docker-compose up -d
 ```
 
-Shows real-time resource usage for all containers.
+## Testing
 
-## 🔒 Security
+### Device Simulator Configuration
 
-### Authentication
-- JWT tokens with 5-hour expiration
-- Secure password hashing (Django's PBKDF2)
-- Role-based access control
+Edit `device_simulator/config.json` to customize:
+- `device_id` - UUID of the device to simulate
+- `interval_seconds` - Measurement interval (default: 1 second)
+- `base_load_kwh` - Base energy consumption (default: 0.2 kWh)
+- `time_acceleration` - Speed up time for testing
 
-### API Security
-- CORS configured for allowed origins
-- CSRF protection enabled
-- SQL injection prevention (Django ORM)
+### Manual Testing Flow
 
-### Production Security Checklist
-- [ ] Change all default passwords
-- [ ] Generate secure JWT secret (256-bit)
-- [ ] Enable HTTPS/TLS
-- [ ] Set DEBUG=False
-- [ ] Configure firewall rules
-- [ ] Enable rate limiting
-- [ ] Set up monitoring and alerts
-- [ ] Regular security updates
+1. Login as admin
+2. Create a new device
+3. Create a new user (or use existing client)
+4. Assign device to user
+5. Update simulator config with device ID
+6. Restart simulator: `docker-compose restart device-simulator`
+7. View measurements in monitoring dashboard
 
-## 📝 Environment Variables
+## Technology Stack
 
-Create `.env` file in project root:
+### Backend
+- **Framework**: Django 5.0 + Django REST Framework 3.14
+- **Authentication**: JWT (djangorestframework-simplejwt)
+- **Database**: PostgreSQL 15
+- **Message Broker**: RabbitMQ 3.13
+- **API Gateway**: Traefik 3.2
+- **Documentation**: drf-spectacular (OpenAPI 3.0)
 
-```env
-# JWT Secret (MUST be same across all services)
-JWT_SECRET_KEY=your-super-secret-key-change-in-production
+### Frontend
+- **Framework**: React 19
+- **Language**: TypeScript 5.9
+- **Build Tool**: Vite 7
+- **Styling**: TailwindCSS 4
+- **Charts**: Recharts 2
+- **HTTP Client**: Axios
+- **Routing**: React Router DOM 7
 
-# PostgreSQL
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=secure-password
+### DevOps
+- **Containerization**: Docker
+- **Orchestration**: Docker Compose
+- **Web Server**: Nginx (for frontend)
 
-# Optional: Override service ports
-# AUTH_PORT=8000
-# USER_PORT=8001
-# DEVICE_PORT=8002
-```
+## Security Features
 
-## 🤝 Contributing
+- JWT-based authentication with secure token signing
+- Password hashing with Django's PBKDF2 algorithm
+- Role-based access control (RBAC)
+- CORS configuration for frontend-backend communication
+- Environment variable management for secrets
+- Service isolation with separate databases
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
+## Performance Considerations
 
-## 📄 License
+- Database indexing on frequently queried fields
+- Connection pooling for database connections
+- Message queue for asynchronous processing
+- Hourly aggregation to reduce query load
+- Persistent RabbitMQ messages for reliability
 
-[Your License Here]
+## Monitoring & Observability
 
-## 👨‍💻 Authors
+- RabbitMQ Management UI for queue monitoring
+- Traefik Dashboard for routing visualization
+- Docker logs for debugging
+- Database query logging (DEBUG mode)
 
-[Your Name/Team]
+## Future Enhancements
 
-## 🙏 Acknowledgments
+- [ ] Add Redis for caching
+- [ ] Implement rate limiting
+- [ ] Add Prometheus + Grafana for metrics
+- [ ] Implement WebSocket for real-time updates
+- [ ] Add unit and integration tests
+- [ ] Implement CI/CD pipeline
+- [ ] Add API versioning
+- [ ] Implement data backup strategy
+- [ ] Add email notifications
+- [ ] Implement audit logging
 
-- Django REST Framework
-- React Team
-- Traefik Team
-- PostgreSQL Community
+## License
 
-## 📞 Support
+[Specify your license here]
 
-For issues or questions:
-1. Check documentation in this README
-2. Review [DOCKER_SETUP.md](DOCKER_SETUP.md)
-3. Check logs: `docker-compose logs -f`
-4. Open an issue on GitHub
+## Contributors
 
-## 🗺️ Roadmap
-
-Future enhancements:
-- [ ] Real-time energy consumption monitoring
-- [ ] Data visualization and charts
-- [ ] Email notifications
-- [ ] Mobile app
-- [ ] Advanced analytics
-- [ ] Export reports (PDF/CSV)
-- [ ] Multi-language support
-- [ ] Dark mode
-
----
-
-**Built with ❤️ using Django, React, and Docker**
+[Add contributors here]

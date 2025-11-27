@@ -11,11 +11,13 @@
   },
   "dependencies": {
     "axios": "^1.13.1",
+    "date-fns": "^3.0.0",
     "jwt-decode": "^4.0.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-hook-form": "^7.66.0",
-    "react-router-dom": "^7.9.5"
+    "react-router-dom": "^7.9.5",
+    "recharts": "^2.10.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.36.0",

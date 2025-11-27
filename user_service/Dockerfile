@@ -31,4 +31,5 @@ EXPOSE 8001
 
 # Run migrations and start server
 CMD python manage.py migrate && \
+    python manage.py consume_messages & \
     python manage.py runserver 0.0.0.0:8001

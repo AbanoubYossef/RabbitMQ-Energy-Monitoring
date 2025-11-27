@@ -11,6 +11,7 @@ ENV PYTHONUNBUFFERED=1
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     postgresql-client \
+    netcat-openbsd \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
@@ -26,9 +27,12 @@ COPY . .
 # Create logs directory
 RUN mkdir -p /app/logs
 
+# Copy entrypoint script
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
 # Expose port
 EXPOSE 8002
 
-# Run migrations and start server
-CMD python manage.py migrate && \
-    python manage.py runserver 0.0.0.0:8002
+# Run entrypoint script
+ENTRYPOINT ["/app/entrypoint.sh"]
