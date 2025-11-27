@@ -428,10 +428,4 @@ Edit `device_simulator/config.json` to customize:
 - [ ] Add email notifications
 - [ ] Implement audit logging
 
-## License
 
-[Specify your license here]
-
-## Contributors
-
-[Add contributors here]
