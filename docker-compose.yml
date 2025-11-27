@@ -32,7 +32,7 @@ services:
     networks:
       - microservices-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -45,14 +45,14 @@ services:
       RABBITMQ_DEFAULT_USER: admin
       RABBITMQ_DEFAULT_PASS: admin123
     ports:
-      - "5672:5672"   # AMQP port
+      - "5672:5672" # AMQP port
       - "15672:15672" # Management UI
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     networks:
       - microservices-network
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      test: [ "CMD", "rabbitmq-diagnostics", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -215,6 +215,87 @@ services:
       RABBITMQ_PORT: 5672
       RABBITMQ_USER: admin
       RABBITMQ_PASS: admin123
+    networks:
+      - microservices-network
+    restart: unless-stopped
+
+  # WebSocket Service (Assignment 3)
+  websocket-service:
+    build:
+      context: ./websocket_service
+    container_name: websocket-service
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      PORT: 8004
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-secret}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: admin
+      RABBITMQ_PASS: admin123
+      NOTIFICATION_QUEUE: notification_queue
+      CHAT_QUEUE: chat_messages_queue
+    ports:
+      - "8004:8004"
+    networks:
+      - microservices-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.websocket.rule=PathPrefix(`/socket.io`)"
+      - "traefik.http.services.websocket.loadbalancer.server.port=8004"
+
+  # Customer Support Service (Assignment 3)
+  customer-support-service:
+    build:
+      context: ./customer_support_service
+    container_name: customer-support-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      SECRET_KEY: support-secret-key
+      DEBUG: "True"
+      DB_NAME: support_db
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_HOST: postgres
+      DB_PORT: 5432
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-secret}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: admin
+      RABBITMQ_PASS: admin123
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-your-gemini-api-key-here}
+      MONITORING_SERVICE_URL: http://monitoring-service:8003/api
+      DEVICE_SERVICE_URL: http://device-service:8002/api
+    ports:
+      - "8005:8005"
+    networks:
+      - microservices-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.support.rule=PathPrefix(`/api/support`)"
+      - "traefik.http.services.support.loadbalancer.server.port=8005"
+
+  # Load Balancer Service (Assignment 3)
+  load-balancer-service:
+    build:
+      context: ./load_balancer_service
+    container_name: load-balancer-service
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: admin
+      RABBITMQ_PASS: admin123
+      DEVICE_DATA_QUEUE: device_data_queue
+      NUM_REPLICAS: 3
+      VIRTUAL_NODES: 150
     networks:
       - microservices-network
     restart: unless-stopped
